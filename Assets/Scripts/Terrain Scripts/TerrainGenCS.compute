@@ -1,0 +1,221 @@
+// Each #kernel tells which function to compile; you can have many kernels
+#pragma kernel CSMain
+
+
+#define NOISE_SIMPLEX_1_DIV_289 0.00346020761245674740484429065744f
+
+float mod289(float x) {
+	return x - floor(x * NOISE_SIMPLEX_1_DIV_289) * 289.0;
+}
+float2 mod289(float2 x) {
+	return x - floor(x * NOISE_SIMPLEX_1_DIV_289) * 289.0;
+}
+float3 mod289(float3 x) {
+	return x - floor(x * NOISE_SIMPLEX_1_DIV_289) * 289.0;
+}
+float permute(float x) {
+	return mod289(
+		x * x * 34.0 + x
+	);
+}
+float3 permute(float3 x) {
+	return mod289(
+		x * x * 34.0 + x
+	);
+}
+float snoise(float2 v)
+{
+	const float4 C = float4(
+		0.211324865405187, // (3.0-sqrt(3.0))/6.0
+		0.366025403784439, // 0.5*(sqrt(3.0)-1.0)
+		-0.577350269189626, // -1.0 + 2.0 * C.x
+		0.024390243902439  // 1.0 / 41.0
+		);
+
+	// First corner
+	float2 i = floor(v + dot(v, C.yy));
+	float2 x0 = v - i + dot(i, C.xx);
+
+	// Other corners
+		// float2 i1 = (x0.x > x0.y) ? float2(1.0, 0.0) : float2(0.0, 1.0);
+		// Lex-DRL: afaik, step() in GPU is faster than if(), so:
+		// step(x, y) = x <= y
+
+		// Actually, a simple conditional without branching is faster than that madness :)
+	int2 i1 = (x0.x > x0.y) ? float2(1.0, 0.0) : float2(0.0, 1.0);
+	float4 x12 = x0.xyxy + C.xxzz;
+	x12.xy -= i1;
+
+	// Permutations
+	i = mod289(i); // Avoid truncation effects in permutation
+	float3 p = permute(
+		permute(
+			i.y + float3(0.0, i1.y, 1.0)
+		) + i.x + float3(0.0, i1.x, 1.0)
+	);
+
+	float3 m = max(
+		0.5 - float3(
+			dot(x0, x0),
+			dot(x12.xy, x12.xy),
+			dot(x12.zw, x12.zw)
+			),
+		0.0
+	);
+	m = m * m;
+	m = m * m;
+
+	// Gradients: 41 points uniformly over a line, mapped onto a diamond.
+	// The ring size 17*17 = 289 is close to a multiple of 41 (41*7 = 287)
+
+	float3 x = 2.0 * frac(p * C.www) - 1.0;
+	float3 h = abs(x) - 0.5;
+	float3 ox = floor(x + 0.5);
+	float3 a0 = x - ox;
+
+	// Normalise gradients implicitly by scaling m
+	// Approximation of: m *= inversesqrt( a0*a0 + h*h );
+	m *= 1.79284291400159 - 0.85373472095314 * (a0 * a0 + h * h);
+
+	// Compute final noise value at P
+	float3 g;
+	g.x = a0.x * x0.x + h.x * x0.y;
+	g.yz = a0.yz * x12.xz + h.yz * x12.yw;
+	return 130.0 * dot(m, g);
+}
+
+//--------------------------------------------------------------------------------------------------------------------------------------------------
+
+
+
+int size;
+float2 startPos;
+int spacing;
+float seed;
+float minHeight;
+
+
+RWStructuredBuffer<int> o_Triangles;
+RWStructuredBuffer<float3> o_Positions;
+RWStructuredBuffer<float2> o_uvs;
+
+
+float GetHeightAtPoint(float2 p)
+{
+
+	p.x += seed;
+	p.y += seed;
+	
+	float totalHeight = 0;
+	float currentHeightMul = 6000;
+	float currentScaleMul = 0.00005;
+
+	for (uint octave = 0; octave < 12; octave++)
+	{
+		float height = snoise(p * currentScaleMul);	//snoise gives a value between -1 and 1
+		height = (height + 1) / 2;	//Makes it a value between 0 and 1
+		height *= currentHeightMul;
+
+		if (octave > 3)
+		{
+			height *= (totalHeight / 6000) * (totalHeight / 6000);
+		}
+
+		totalHeight += height;
+		currentHeightMul *= 0.45;
+		currentScaleMul *= 2;
+	}
+
+	if (totalHeight < minHeight)
+	{
+		totalHeight = minHeight;
+	}
+
+	return totalHeight;
+}
+
+
+
+[numthreads(1, 1, 1)]	//Amount of threads per group
+void CSMain(uint3 id : SV_DispatchThreadID)
+{
+	//Gets the position of the current vertex
+	float3 pos;
+	pos.x = id.x % size;
+	pos.x += startPos.x;
+	pos.z = id.x / size;
+	pos.z += startPos.y;
+	pos.x *= spacing;
+	pos.z *= spacing;
+	float height = GetHeightAtPoint(float2(pos.x, pos.z));
+	pos.y = height;
+
+	o_Positions[id.x].xyz = pos.xyz;
+	o_uvs[id.x] = float2(height, 0);	//Used to pass the height data to the water shader
+	if (((id.x / (uint)size) != ((uint)size - 1)) && ((id.x % (uint)size) != ((uint)size - 1)))
+	{
+		//This excludes the final row and column, so we can draw triangles with the others.
+		int iStart = (id.x - (id.x / size)) * 6;
+		o_Triangles[iStart] = id.x;
+		o_Triangles[iStart + 1] = id.x + size;
+		o_Triangles[iStart + 2] = id.x + size + 1;
+		o_Triangles[iStart + 3] = id.x;
+		o_Triangles[iStart + 4] = id.x + size + 1;
+		o_Triangles[iStart + 5] = id.x + 1;
+	}
+}
+
+
+#pragma kernel CSNormals //Finds normals of terrain
+RWStructuredBuffer<float3> o_Normals;
+
+float3 ExtrapolatePoint(float3 p, int pointIndex, float2 signs)
+{
+	int column = (pointIndex % size) + signs.x;	//Gets the column for the point
+	int row = (pointIndex / size) + signs.y;	//Gets row for the point
+	float3 newPoint;
+	if (column >= size || row >= size || column < 0 || row < 0)
+	{
+		//The point isn't part of the chunk
+		newPoint = float3(p.x + (signs.x * spacing), 0, p.z + (signs.y * spacing));
+		newPoint.y = GetHeightAtPoint(float2(newPoint.xz));
+	}
+	else
+	{
+		int index = pointIndex + signs.x + (signs.y * size);
+		newPoint = o_Positions[index];
+	}
+	return newPoint;
+}
+float3 GetNormalAtPoint(float3 p, int pointIndex)
+{
+	float4 signArray[] = {
+		float4(0, 1, 1, 1),
+		float4(1, 1, 1, 0),
+		float4(1, 0, 0, -1),
+		float4(0, -1, -1, -1),
+		float4(-1, -1, -1, 0),
+		float4(-1, 0, 0, 1)
+	};
+	float3 normal = float3(0, 0, 0);
+	for (uint i = 0; i < signArray.Length; i++)
+	{
+		float3 pointLeft = ExtrapolatePoint(p, pointIndex, float2(signArray[i].x, signArray[i].y));
+		float3 pointRight = ExtrapolatePoint(p, pointIndex, float2(signArray[i].z, signArray[i].w));
+		pointLeft -= p;
+		pointRight -= p;
+		float3 currentNormal = cross(pointLeft, pointRight);
+		normal += currentNormal;
+	}
+	normal = normalize(normal);
+	return normal;
+}
+
+[numthreads(1, 1, 1)]	//Amount of threads per group
+void CSNormals(uint3 id : SV_DispatchThreadID)
+{
+	float3 pos = o_Positions[id.x];
+	float3 n = GetNormalAtPoint(pos, (int)id.x);
+	o_Normals[id.x] = n;
+}
+
