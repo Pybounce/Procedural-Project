@@ -68,7 +68,8 @@ public class ChunkController : MonoBehaviour
         GetTerrainSettings();
         ResetLoadedChunks();
         playerController.SetSpawn(new Vector3(0, 10000, 0));
-       // LODTriangles = GetLODTriangles(24, terrainChunkMeshFilters[0].mesh.triangles);  //Used for mesh colliders
+        LODTriangles = GetLODTriangles(24, terrainChunkObject.transform.GetChild(0).GetComponent<MeshFilter>().sharedMesh.triangles);  //Used for mesh colliders
+        //StartCoroutine(UpdateMeshColliders());
     }
     private void Update()
     {
@@ -78,7 +79,7 @@ public class ChunkController : MonoBehaviour
             //Makes sure the player is in a different chunk
             playerController.SetLastChunk(currentPlayerChunk);
             SortChunks();
-           // StartCoroutine(UpdateMeshColliders());
+            StartCoroutine(UpdateMeshColliders());
         }
     }
 
@@ -110,7 +111,8 @@ public class ChunkController : MonoBehaviour
             obj.AddComponent<MeshFilter>();
             obj.AddComponent<MeshRenderer>();
             obj.AddComponent<MeshCollider>();
-            obj.GetComponent<MeshCollider>().convex = false;
+            obj.GetComponent<MeshCollider>().sharedMesh = new Mesh();
+           // obj.GetComponent<MeshCollider>().convex = false;
             obj.transform.SetParent(holder.transform);
             obj.GetComponent<Renderer>().material = mat;
         }
@@ -198,45 +200,34 @@ public class ChunkController : MonoBehaviour
             wMesh.SetUVs(0, _uvs);
             wMesh.triangles = _tris;
 
-
-
-            //terrainChunkMeshFilters[freeSpaceToLoad[i]].sharedMesh = tMesh;
-            //waterChunkMeshFilters[freeSpaceToLoad[i]].sharedMesh = wMesh;
             yield return null;
         }
     }
     
     private int[] LODTriangles;
 
-    /*
+    
     private IEnumerator UpdateMeshColliders()
     {
         Vector2Int playerChunk = GetChunkAtPoint(new Vector2(playerController.GetPosition().x, playerController.GetPosition().z));
         for (int i = 0; i < loadedTerrainChunks.Count; i++)
         {
-            if (terrainChunkMeshFilters[i].gameObject.GetComponent<MeshCollider>().sharedMesh == null)
-            {
-                terrainChunkMeshFilters[i].gameObject.GetComponent<MeshCollider>().sharedMesh = new Mesh();
-            }
+            
             Vector2 chunkIndex = loadedTerrainChunks[i];
             int xDelta = Mathf.Abs(playerChunk.x - (int)chunkIndex.x);
             int yDelta = Mathf.Abs(playerChunk.y - (int)chunkIndex.y);
+            Mesh LODMesh = terrainChunkObject.transform.GetChild(i).GetComponent<MeshCollider>().sharedMesh;
+            LODMesh.Clear();
             if (Mathf.Max(xDelta, yDelta) <= 1) //Only give mesh colliders to chunks that directly surround the player
             {
-                
-                if (terrainChunkMeshFilters[i].gameObject.GetComponent<MeshCollider>().sharedMesh != null)
-                {
-                    terrainChunkMeshFilters[i].gameObject.GetComponent<MeshCollider>().sharedMesh.Clear();
-                }
-                Mesh LODMesh = terrainChunkMeshFilters[i].gameObject.GetComponent<MeshCollider>().sharedMesh;
-                LODMesh.vertices = terrainChunkMeshFilters[i].mesh.vertices;
-                LODMesh.normals = terrainChunkMeshFilters[i].mesh.normals;
+                Mesh chunkMesh = terrainChunkObject.transform.GetChild(i).GetComponent<MeshFilter>().sharedMesh;
+                LODMesh.vertices = chunkMesh.vertices;
+                LODMesh.normals = chunkMesh.normals;
                 LODMesh.triangles = LODTriangles;
+                terrainChunkObject.transform.GetChild(i).GetComponent<MeshCollider>().convex = false;
             }
-            else if (terrainChunkMeshFilters[i].gameObject.GetComponent<MeshCollider>().sharedMesh != null)
-            {
-                terrainChunkMeshFilters[i].gameObject.GetComponent<MeshCollider>().sharedMesh.Clear();
-            }
+            
+            
             yield return null;
         }
 
@@ -265,5 +256,5 @@ public class ChunkController : MonoBehaviour
         }
         return triangles.ToArray();
     } 
-    */
+    
 }

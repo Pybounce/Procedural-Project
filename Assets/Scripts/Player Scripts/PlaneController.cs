@@ -27,7 +27,8 @@ public class PlaneController : MonoBehaviour
         }
     }
 
-    [SerializeField] float speed = 200f;
+    [SerializeField] private float speed = 200f;
+    [SerializeField] private PlayerController playerController;
 
     //Pitch
     [SerializeField] AttitudePart planePitch = new AttitudePart(35f, 35f, 45f, 120f);
@@ -92,8 +93,7 @@ public class PlaneController : MonoBehaviour
         transform.Rotate(turnDelta);
         SetFlapRotations();
 
-        transform.position += (transform.right * speed * Time.deltaTime);
-
+        playerController.SetPosition(playerController.GetPosition() + (transform.right * speed * Time.deltaTime));
        // ShowFPSInConsole();
     }
 

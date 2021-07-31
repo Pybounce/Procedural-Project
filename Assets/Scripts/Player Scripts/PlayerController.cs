@@ -20,6 +20,10 @@ public class PlayerController : MonoBehaviour
     public void SetPosition(Vector3 pos)
     {
         transform.position = pos;
+        if (pos.y < 4000f)
+        {
+            Kill(); //The level of water is 4000, so going beneath it will kill the player
+        }
     }
     public Vector3 GetPosition()
     {

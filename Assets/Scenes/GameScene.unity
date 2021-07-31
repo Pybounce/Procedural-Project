@@ -7629,6 +7629,10 @@ PrefabInstance:
       value: 25
       objectReference: {fileID: 0}
     - target: {fileID: 3852508598388942065, guid: ce7eb7d3b5fccde4aac8db462e733597, type: 3}
+      propertyPath: playerController
+      value: 
+      objectReference: {fileID: 919132147481239835}
+    - target: {fileID: 3852508598388942065, guid: ce7eb7d3b5fccde4aac8db462e733597, type: 3}
       propertyPath: rollAcceleration
       value: 150
       objectReference: {fileID: 0}
